@@ -51,16 +51,13 @@ public class FileService {
         if (!file.exists()) {
             log.error("未找到实时数据文件夹");
         } else {
-            File[] vwsDirects = file.listFiles();
-            /** 找到VWS文件夹下的对应各个编号的VWS传感器的实时数据的存储文件夹 */
-            for (int i = 0; i <vwsDirects.length; i++) {
-                File[] dataFiles = vwsDirects[i].listFiles() ;
-                CountDownLatch await = new CountDownLatch(dataFiles.length) ;
-                for (File dataFile:dataFiles) {
-                    threadPool.execute(new DataThread(dataFile, await));
-                }
-                await.await();
+            File[] dataFiles = file.listFiles();
+            /** 找到VWS文件夹下的所有传感器数据文件 */
+            CountDownLatch await = new CountDownLatch(dataFiles.length) ;
+            for (File dataFile:dataFiles) {
+                threadPool.execute(new DataThread(dataFile, await));
             }
+            await.await();
         }
     }
 
@@ -89,26 +86,28 @@ public class FileService {
                     while ((s=br.readLine()) != null) {
                         String[] arr2 = StringUtils.split(s,";") ;
                         Map<String, String> map1 = new HashMap<>() ;
-                        ArchMonitorDataPo archMonitorDataPo = new ArchMonitorDataPo() ;
-                        archMonitorDataPo.setCreateTime(DateUtil.stringToDate(arr2[0]));
-                        archMonitorDataPo.setAssetName(arr1[1]);
-                        archMonitorDataPo.setValue(Double.parseDouble(arr2[1]));
-                        archMonitorDataPoList.add(archMonitorDataPo) ;
-                        map1.put(arr1[1], String.valueOf(Double.parseDouble(arr2[1]))) ;
-                        /** WebSocket里的数据是从下面的代码里面取值的，所以这里要加锁，防止多线程运行的时候冲突 */
-                        synchronized (lock) {
-                            List<String> list = map.get(arr1[1]) ;
-                            if (list != null) {
-                                if (list.size()>299) {
-                                    do {
-                                        list.remove(list.get(0)) ;
-                                    } while (list.size() == 299) ;
+                        for (int i=1; i<arr2.length; i++) {
+                            ArchMonitorDataPo archMonitorDataPo = new ArchMonitorDataPo() ;
+                            archMonitorDataPo.setCreateTime(DateUtil.stringToDate(arr2[0]));
+                            archMonitorDataPo.setAssetName(arr1[i]);
+                            archMonitorDataPo.setValue(Double.parseDouble(arr2[i]));
+                            archMonitorDataPoList.add(archMonitorDataPo) ;
+                            map1.put(arr1[i], String.valueOf(Double.parseDouble(arr2[i]))) ;
+                            /** WebSocket里的数据是从下面的代码里面取值的，所以这里要加锁，防止多线程运行的时候冲突 */
+                            synchronized (lock) {
+                                List<String> list = map.get(arr1[i]) ;
+                                if (list != null) {
+                                    if (list.size()>299) {
+                                        do {
+                                            list.remove(list.get(0)) ;
+                                        } while (list.size() == 299) ;
+                                    }
+                                } else {
+                                    list = new ArrayList<>() ;
                                 }
-                            } else {
-                                list = new ArrayList<>() ;
+                                list.add(String.valueOf(Double.parseDouble(arr2[i]))) ;
+                                map.put(arr1[i],list) ;
                             }
-                            list.add(String.valueOf(Double.parseDouble(arr2[1]))) ;
-                            map.put(arr1[1],list) ;
                         }
                     }
                 } catch (Exception e) {

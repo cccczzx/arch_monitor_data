@@ -33,7 +33,7 @@ public class FileService {
     @Value("${arch.data.path}")
     private String path ;
 
-    private final String lock =  "lock" ;
+    private final String lock = "lock" ;
 
     @Value("${arch.data.backup}")
     private String backupPath ;

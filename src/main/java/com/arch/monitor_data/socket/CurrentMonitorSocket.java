@@ -1,76 +1,124 @@
 package com.arch.monitor_data.socket;
 
 
+import com.arch.monitor_data.entity.ArchAssetPo;
+import com.arch.monitor_data.service.ArchAssetService;
 import io.swagger.annotations.Api;
 import lombok.extern.slf4j.Slf4j;
+import net.sf.json.JSONObject;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import javax.websocket.*;
+import javax.websocket.server.PathParam;
 import javax.websocket.server.ServerEndpoint;
 import java.io.IOException;
+import java.io.Serializable;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CopyOnWriteArraySet;
 
 @Api(tags = "socket发送信息")
-@ServerEndpoint(value = "/currentMonitor")
+@ServerEndpoint(value = "/currentMonitorState/{usId}/{bridgeName}")
 @Component
 @Slf4j
 public class CurrentMonitorSocket {
 
-    private static int onlineCount = 0 ;
     /** 静态变量，用来记录当前在线连接数，应该把它设计成线程安全的 */
+    private static  int onlineCount = 0 ;
 
-    private static CopyOnWriteArraySet<CurrentMonitorSocket> wsClientMap = new CopyOnWriteArraySet<>() ;
     /** concurrent包的线程安全Set,用来存放每个客户端对应的MyWebSocket对象 */
+    private static CopyOnWriteArraySet<CurrentMonitorSocket> wsClientMap = new CopyOnWriteArraySet<>() ;
 
-    private Session session ;
     /** 与某个客户端的连接会话，需要通过它来给客户端发送数据 */
+    private Session session ;
 
-    /**
-     * 连接建立成功调用的方法
-     * */
+    /** 接收sid */
+    private String usId = "" ;
+
+    /** 接收bridgeName */
+    private String bridgeName = "" ;
+
+    private List<ArchAssetPo> archAssetPoList ;
+
+    private static ArchAssetService archAssetService ;
+
+    @Autowired
+    public void setArchServiceImpl (ArchAssetService archAssetService) {
+        CurrentMonitorSocket.archAssetService = archAssetService ;
+    }
+
+    /** 连接建立成功调用的方法 */
     @OnOpen
-    /** 连接建立以后会自动调用@OnOpen注解的方法，把当前的会话session存起来 */
-    public void onOpen (Session session) {
+    public void onOpen (Session session, @PathParam("usId") String usId, @PathParam("bridgeName") String bridgeName) {
         this.session = session ;
         wsClientMap.add(this) ;
         addOnlineCount() ;
-        /** 当前Session的数量+1 */
+        /** 在线数+1 */
+        log.info("有新窗口开始监听：" + usId + "，当前在线人数为" + getOnlineCount());
+        this.usId = usId ;
+        this.bridgeName = bridgeName ;
+        this.archAssetPoList = archAssetService.findArchAssetList(bridgeName)  ;
     }
 
-    /** 连接关闭  */
+    /**
+     * 连接关闭
+     * */
     @OnClose
-    public void onClose () {
+    public void onClose() {
         wsClientMap.remove(this) ;
         subOnlineCount() ;
-        /** 当前Session的数量-1 */
     }
 
     /**
      * 收到客户端消息
      * @param message 客户端发送过来的消息
      * @param session 当前会话session
+     * @throws IOException
      * */
     @OnMessage
     public void onMessage (String message, Session session) throws IOException {
-        sendMsgToAll(message) ;
-        /** 前端给当前session发了一个消息，那么消息就会传到这里来  */
+        sendMsgToAll (message) ;
     }
 
+    /**
+     * 发生错误
+     * */
     @OnError
-    public  void onError (Session session, Throwable error) {
+    public void onError (Session session, Throwable error) {
         error.printStackTrace();
-        /** 连接出错了以后，就把错误的消息打日志里面去 */
     }
 
     /**
      * 给所有客户端群发消息
      * @param message 消息内容
-     *
+     * @throws IOException
      * */
-    public static void sendMsgToAll(String message) throws IOException {
-        for (CurrentMonitorSocket item : wsClientMap) {
+    public  static  void  sendMsgToAll(String message) throws IOException  {
+        for (com.arch.monitor_data.socket.CurrentMonitorSocket item : wsClientMap) {
             item.session.getBasicRemote().sendText(message);
-            /** 遍历所有连接的session，找到远程客户端，发送消息 */
+        }
+    }
+
+    /**
+     * 群发自定义消息
+     * */
+    public static void sendInfo (String message) throws  IOException {
+
+        for (CurrentMonitorSocket item : wsClientMap) {
+            try {
+                /** 这里可以设定只推送给这个sid的，为null则全部推送  */
+                log.info("CurrentMonitorSocket用户：" + item.usId + "推送消息到窗口，推送内容：" + message);
+                Map<String, String> map = JSONObject.fromObject(message) ;
+                Map<String, String> sendMap = new HashMap<String,String>() ;
+                for (ArchAssetPo archAssetPo: item.archAssetPoList) {
+                    sendMap.put(archAssetPo.getAssetName(), map.get(archAssetPo.getAssetName())) ;
+                }
+                item.sendMessage(JSONObject.fromObject(sendMap).toString()) ;
+            } catch (IOException e) {
+                continue;
+            }
         }
     }
 
@@ -79,15 +127,18 @@ public class CurrentMonitorSocket {
     }
 
     public static synchronized int getOnlineCount() {
-        return CurrentMonitorSocket.onlineCount ;
+        return com.arch.monitor_data.socket.CurrentMonitorSocket.onlineCount ;
     }
 
     public static synchronized void addOnlineCount() {
-        CurrentMonitorSocket.onlineCount++ ;
+        com.arch.monitor_data.socket.CurrentMonitorSocket.onlineCount++ ;
     }
 
     public static synchronized void subOnlineCount() {
-        CurrentMonitorSocket.onlineCount-- ;
+        com.arch.monitor_data.socket.CurrentMonitorSocket.onlineCount-- ;
     }
+
+
+
 
 }

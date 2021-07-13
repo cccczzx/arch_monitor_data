@@ -1,6 +1,5 @@
 package com.arch.monitor_data.socket;
 
-
 import com.arch.monitor_data.entity.ArchAssetPo;
 import com.arch.monitor_data.service.ArchAssetService;
 import io.swagger.annotations.Api;
@@ -137,8 +136,5 @@ public class CurrentMonitorSocket {
     public static synchronized void subOnlineCount() {
         com.arch.monitor_data.socket.CurrentMonitorSocket.onlineCount-- ;
     }
-
-
-
 
 }
